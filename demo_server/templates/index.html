@@ -1,0 +1,432 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <!-- The above 3 meta tags *must* come first in the head; any other head content must come *after* these tags -->
+    <title>CS 4621</title>
+
+    <!-- Bootstrap -->
+    <!-- <link href="../css/bootstrap.min.css" rel="stylesheet"> -->
+
+    <!-- HTML5 shim and Respond.js for IE8 support of HTML5 elements and media queries -->
+    <!-- WARNING: Respond.js doesn't work if you view the page via file:// -->
+    <!--[if lt IE 9]>
+    <script src="https://oss.maxcdn.com/html5shiv/3.7.3/html5shiv.min.js"></script>
+    <script src="https://oss.maxcdn.com/respond/1.4.2/respond.min.js"></script>
+    <![endif]-->
+
+    <!-- <link rel="stylesheet" href="../css/jquery-ui.min.css"> -->
+    <!-- <script type="text/javascript" async
+            src="https://cdn.mathjax.org/mathjax/latest/MathJax.js?config=TeX-MML-AM_CHTML">
+    </script> -->
+</head>
+<body style="background-color: black;">
+<div class="container">
+    <h1 style="color:white; text-align: center">Fractissimo</h2>
+    <div id="content" style="color:white; text-align: center">
+      <canvas id="webglCanvas" style="border: none; background-color: black;" width="1024" height="600"></canvas>
+      <div>
+      <input type="file" id="thefile" accept="audio/*" />
+      <audio id="audio" controls></audio>
+    </div>
+    </div>
+
+
+</div>
+
+<script src="../static/jquery-3.1.1.min.js"></script>
+<script src="../static/jquery-ui.min.js"></script>
+<script src="../static/gl-matrix-min.js"></script>
+<script src="../static/preloadjs-0.6.2.min.js"></script>
+
+<script id="vertexShader" type="x-shader/x-vertex">
+    attribute vec3 vert_position;
+    attribute vec2 vert_texCoord;
+    varying vec2 geom_texCoord;
+
+    void main() {
+        gl_Position = vec4(vert_position, 1.0);
+        geom_texCoord = vert_texCoord;
+    }
+</script>
+
+<script id="fragmentShader" type="x-shader/x-fragment">
+    #define PI 3.141592654
+    precision highp float;
+    varying vec2 geom_texCoord;
+    uniform vec2 u_resolution;
+    uniform float u_time;
+    uniform float u_pitch;
+
+
+    // utility functions
+    vec2 toPolar(vec2 pos){
+       	float r = length(pos);
+        float a = atan(-pos.y,-pos.x)+PI;
+        return vec2(r,a);
+    }
+
+    vec2 rotate(vec2 pos, float angle){
+    	return mat2(cos(angle), -sin(angle), sin(angle), cos(angle))*pos;
+    }
+
+    // shape drawing with step function
+    float circle(vec2 center, vec2 pos, float r){
+      float squared_dis = dot(pos - center, pos-center);
+      return step(squared_dis, r*r);
+    }
+
+
+    float triangle(vec2 center, vec2 pos, float radius){
+        vec2 dir = pos - center;
+        return step(0.0, min(dir.y + radius,
+          min(- dir.y + sqrt(3.0)*dir.x+2.0*radius,
+          -dir.y - sqrt(3.0)*dir.x+2.0*radius)));
+    }
+
+    float hexagram(vec2 center, vec2 pos, float radius){
+      float t1 = triangle(center, pos, radius);
+
+      pos = center + rotate(pos-center,PI);
+
+      float t2 = triangle(center, pos, radius);
+      return max(t1,t2);
+    }
+
+    float polygon(vec2 center, vec2 pos, float radius, int N){
+
+      // Angle and radius from the current pixel
+      float a = atan(pos.x,pos.y)+PI;
+      float r = 2.0*PI/float(N);
+
+      // Shaping function that modulate the distance
+      float d = cos(floor(.5+a/r)*r-a)*length(pos);
+
+      return 1.0-smoothstep(.4,.41,d);
+    }
+
+    float skeleton(vec2 center, vec2 pos, float radius){
+      vec2 polar = toPolar(pos - center);
+
+      // vertical skeleton
+      float width = 0.13*radius;
+      vec2 dir = rotate(pos-center, floor((polar.y-PI/2.0)/(PI/3.0))*(PI/3.0));
+      float ver = mix(0.0,1.0,1.0-clamp(abs(dir.x)/width,0.0,1.0));
+      ver = ver - mod(ver,0.25);
+      ver *= step(polar.x,radius);
+
+      // horizontal skeleton
+      dir.x = abs(dir.x);
+      dir = rotate(dir,-PI/6.0);
+      float hor = clamp(dir.y/radius,0.0,1.0);
+      hor = fract(hor*4.0);
+      hor = 1.0 - abs(hor*2.0 - 1.0);
+      hor = hor - mod(hor,0.25);
+
+      return max(ver, hor);
+    }
+
+    // blend two shapes
+    float drawShape(vec2 center, vec2 pos, float radius){
+      // crossfade two shapes using time as ratio.
+      float fadeSpeed = 0.8; // this should be something we map to
+      float crossfadeIntensity = 0.5;
+      float shapeRatio = sin(u_time * fadeSpeed)*crossfadeIntensity+0.2;
+      float result;
+      float result2;
+      result = mix(circle(center, pos, radius),
+              skeleton(center, pos, radius),
+              shapeRatio);
+      result2 = mix(skeleton(center, pos, radius),
+              hexagram(center, pos, radius),
+              shapeRatio);
+      return mix(result, result2, u_pitch+0.1);
+    }
+
+    // koch fractal algorithm
+    float koch(vec2 pos){
+      // float pitch = u_pitch+0.01;
+      // koch fractal iterations
+      const int n = 5;
+      float radius = 70.0;
+      vec2 center = vec2(0.0);
+
+      float c = drawShape(center,pos,radius);
+
+      for(int i = 0;i<n;i++)
+        {
+          vec2 localPos = pos - center;
+          float polarAngle = atan(-localPos.y,-localPos.x) + PI;
+          float index = floor(polarAngle/(PI/3.0))+0.5;
+          center += (radius*4.0/3.0)*vec2(cos(index*PI/3.0),sin(index*PI/3.0));
+          radius /= 4.0*u_pitch;
+          c += drawShape(center,pos,radius);
+      }
+      return c;
+    }
+
+    void main() {
+      // rotation speed
+      // u_pitch=u_pitch+0.1;
+
+      float speed = 0.5;
+      vec2 pos = 180.0*(2.0*gl_FragCoord.xy - u_resolution.xy)/u_resolution.y;
+      pos = rotate(pos,u_time*speed)*(1.0+0.2*sin(u_time));
+      // alpha
+     	float c = koch(pos)*(sin(u_time)*0.2+0.35);
+      // color
+      vec3 backgroundCol = 0.3*vec3(u_pitch,u_pitch,u_pitch)+vec3(0.1,0.0,0.1);
+      vec3 fractalCol = vec3(0.4,0.7,0.6);
+      vec3 col = backgroundCol*pow(1.5-length(geom_texCoord-vec2(0.5)),2.0) +
+          fractalCol*c;
+
+      gl_FragColor = vec4(col,1.0);
+    }
+</script>
+
+<script>
+    function initializeWebGL(canvasName) {
+        var canvas = $("#" + canvasName);
+        // Getting WebGL context the right way
+        var gl = null;
+        try {
+            gl = canvas[0].getContext("experimental-webgl");
+            if (!gl) {
+                gl = canvas[0].getContext("webgl");
+            }
+        } catch (error) {
+            // NO-OP
+        }
+        if (!gl) {
+            alert("Could not get WebGL context!");
+            throw new Error("Could not get WebGL context!");
+        }
+        return gl;
+    }
+
+    function createShader(gl, shaderScriptId) {
+        var shaderScript = $("#" + shaderScriptId);
+        var shaderSource = shaderScript[0].text;
+        var shaderType = null;
+        if (shaderScript[0].type == "x-shader/x-vertex") {
+            shaderType = gl.VERTEX_SHADER;
+        } else if (shaderScript[0].type == "x-shader/x-fragment") {
+            shaderType = gl.FRAGMENT_SHADER;
+        } else {
+            throw new Error("Invalid shader type: " + shaderScript[0].type)
+        }
+        var shader = gl.createShader(shaderType);
+        gl.shaderSource(shader, shaderSource);
+        gl.compileShader(shader);
+        if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+            var infoLog = gl.getShaderInfoLog(shader);
+            gl.deleteShader(shader);
+            throw new Error("An error occurred compiling the shader: " + infoLog);
+        } else {
+            return shader;
+        }
+    }
+
+    function createGlslProgram(gl, vertexShaderId, fragmentShaderId) {
+        var program = gl.createProgram();
+        gl.attachShader(program, createShader(gl, vertexShaderId));
+        gl.attachShader(program, createShader(gl, fragmentShaderId));
+        gl.linkProgram(program);
+        gl.validateProgram(program);
+        if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+            var infoLog = gl.getProgramInfoLog(program);
+            gl.deleteProgram(program);
+            throw new Error("An error occurred linking the program: " + infoLog);
+        } else {
+            return program;
+        }
+    }
+
+    // function runCanvas(canvasName, vertexShaderName, fragmentShaderName, prepareProgram) {
+    //     var gl = initializeWebGL(canvasName);
+    //     var program = createGlslProgram(gl, vertexShaderName, fragmentShaderName);
+    //
+    //     var vertexData = [
+    //         -1.0, -1.0, 0.0,  // Lower left
+    //         0.0,  0.0,
+    //         1.0, -1.0, 0.0,  // Lower right
+    //         1.0,  0.0,
+    //         1.0,  1.0, 0.0,  // Top right
+    //         1.0,  1.0,
+    //         -1.0,  1.0, 0.0,  // Top left
+    //         0.0,  1.0
+    //     ];
+    //     var vertexArray = new Float32Array(vertexData);
+    //     var vertexBuffer = gl.createBuffer();
+    //     gl.bindBuffer(gl.ARRAY_BUFFER, vertexBuffer);
+    //     gl.bufferData(gl.ARRAY_BUFFER, vertexArray, gl.STATIC_DRAW);
+    //     gl.bindBuffer(gl.ARRAY_BUFFER, null);
+    //
+    //     var indexData = [0, 1, 2, 0, 2, 3];
+    //     var indexArray = new Uint16Array(indexData);
+    //     var indexBuffer = gl.createBuffer();
+    //     gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, indexBuffer);
+    //     gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, indexArray, gl.STATIC_DRAW);
+    //     gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, null);
+    //
+    //     function updateWebGL(time) {
+    //         var canvas = $("#" + "webglCanvas");
+    //         gl.clearColor(0.0, 0.0, 0.0, 0.0);
+    //         gl.clear(gl.COLOR_BUFFER_BIT);
+    //
+    //         gl.useProgram(program);
+    //
+    //         prepareProgram(gl, program);
+    //
+    //         gl.bindBuffer(gl.ARRAY_BUFFER, vertexBuffer);
+    //         var vertPositionLocation = gl.getAttribLocation(program, "vert_position");
+    //         gl.enableVertexAttribArray(vertPositionLocation);
+    //         gl.vertexAttribPointer(vertPositionLocation, 3, gl.FLOAT, false, 4*5, 0);
+    //         var vertTextureLocation = gl.getAttribLocation(program, "vert_texCoord");
+    //         gl.enableVertexAttribArray(vertTextureLocation);
+    //         gl.vertexAttribPointer(vertTextureLocation, 2, gl.FLOAT, false, 4*5, 4*3);
+    //         gl.bindBuffer(gl.ARRAY_BUFFER, null);
+    //
+    //         gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, indexBuffer);
+    //         gl.drawElements(gl.TRIANGLES, 6, gl.UNSIGNED_SHORT, 0);
+    //         gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, null);
+    //
+    //         gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, freqBuffer);
+    //         // for (var i = 0; i < frequencyData.length; i++) {
+    //         //     var maxNum = Math.max.apply(null, frequencyData);
+    //         //     frequencyData[i] = frequencyData[i]/maxNum;
+    //         //     // console.log((frequencyData[i]));
+    //         //     gl.uniform1f(gl.getUniformLocation(program, "u_pitch"), frequencyData[i]);
+    //         // }
+    //         gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, null);
+    //
+    //         gl.uniform1f(gl.getUniformLocation(program, "u_time"), time*0.001);
+    //         gl.uniform2f(gl.getUniformLocation(program, "u_resolution"), canvas[0].width, canvas[0].height);
+    //
+    //         gl.useProgram(null);
+    //
+    //         window.requestAnimationFrame(updateWebGL);
+    //     }
+    //
+    //     window.requestAnimationFrame(updateWebGL);
+    // }
+    //
+    // runCanvas("webglCanvas", "vertexShader", "fragmentShader", function(gl, program) {
+    //     // var centerX = $("#fractalCenterX").slider("value") / 1000.0;
+    //     // var centerY = $("#fractalCenterY").slider("value") / 1000.0;
+    //     // var scale = $("#fractalScale").slider("value") / 1000.0;
+    //     // scale = 0.1 + (9.99)*scale;
+    // });
+
+    window.onload = function() {
+    var file = document.getElementById("thefile");
+    var audio = document.getElementById("audio");
+
+    file.onchange = function() {
+      var files = this.files;
+      audio.src = URL.createObjectURL(files[0]);
+      audio.load();
+      audio.play();
+      var context = new AudioContext();
+      var src = context.createMediaElementSource(audio);
+      var analyser = context.createAnalyser();
+
+      // var canvas = $("#" + "webglCanvas");
+      // var ctx = canvas.getContext("2d");
+
+      src.connect(analyser);
+      analyser.connect(context.destination);
+
+      analyser.fftSize = 256;
+
+      var bufferLength = analyser.frequencyBinCount;
+      // console.log(bufferLength);
+
+      var dataArray = new Uint8Array(bufferLength);
+
+      function runCanvas(canvasName, vertexShaderName, fragmentShaderName, prepareProgram) {
+          var gl = initializeWebGL(canvasName);
+          var program = createGlslProgram(gl, vertexShaderName, fragmentShaderName);
+
+          var vertexData = [
+              -1.0, -1.0, 0.0,  // Lower left
+              0.0,  0.0,
+              1.0, -1.0, 0.0,  // Lower right
+              1.0,  0.0,
+              1.0,  1.0, 0.0,  // Top right
+              1.0,  1.0,
+              -1.0,  1.0, 0.0,  // Top left
+              0.0,  1.0
+          ];
+          var vertexArray = new Float32Array(vertexData);
+          var vertexBuffer = gl.createBuffer();
+          gl.bindBuffer(gl.ARRAY_BUFFER, vertexBuffer);
+          gl.bufferData(gl.ARRAY_BUFFER, vertexArray, gl.STATIC_DRAW);
+          gl.bindBuffer(gl.ARRAY_BUFFER, null);
+
+          var indexData = [0, 1, 2, 0, 2, 3];
+          var indexArray = new Uint16Array(indexData);
+          var indexBuffer = gl.createBuffer();
+          gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, indexBuffer);
+          gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, indexArray, gl.STATIC_DRAW);
+          gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, null);
+
+          function updateWebGL(time) {
+              var canvas = $("#" + "webglCanvas");
+              gl.clearColor(0.0, 0.0, 0.0, 0.0);
+              gl.clear(gl.COLOR_BUFFER_BIT);
+
+              gl.useProgram(program);
+
+              prepareProgram(gl, program);
+
+              gl.bindBuffer(gl.ARRAY_BUFFER, vertexBuffer);
+              var vertPositionLocation = gl.getAttribLocation(program, "vert_position");
+              gl.enableVertexAttribArray(vertPositionLocation);
+              gl.vertexAttribPointer(vertPositionLocation, 3, gl.FLOAT, false, 4*5, 0);
+              var vertTextureLocation = gl.getAttribLocation(program, "vert_texCoord");
+              gl.enableVertexAttribArray(vertTextureLocation);
+              gl.vertexAttribPointer(vertTextureLocation, 2, gl.FLOAT, false, 4*5, 4*3);
+              gl.bindBuffer(gl.ARRAY_BUFFER, null);
+
+              gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, indexBuffer);
+              gl.drawElements(gl.TRIANGLES, 6, gl.UNSIGNED_SHORT, 0);
+              gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, null);
+
+              gl.uniform1f(gl.getUniformLocation(program, "u_time"), time*0.001);
+              gl.uniform2f(gl.getUniformLocation(program, "u_resolution"), canvas[0].width, canvas[0].height);
+
+              analyser.getByteFrequencyData(dataArray);
+              // for (var i = 0; i < bufferLength; i++) {
+                // console.log(dataArray[i]/bufferLength);
+                console.log(dataArray[bufferLength/2]);
+                gl.uniform1f(gl.getUniformLocation(program, "u_pitch"), Math.min(dataArray[bufferLength/2]*1.5, 200)/200);
+              // }
+
+              gl.useProgram(null);
+              window.requestAnimationFrame(updateWebGL);
+          }
+
+          window.requestAnimationFrame(updateWebGL);
+      }
+
+      runCanvas("webglCanvas", "vertexShader", "fragmentShader", function(gl, program) {
+          // var centerX = $("#fractalCenterX").slider("value") / 1000.0;
+          // var centerY = $("#fractalCenterY").slider("value") / 1000.0;
+          // var scale = $("#fractalScale").slider("value") / 1000.0;
+          // scale = 0.1 + (9.99)*scale;
+      });
+
+      audio.play();
+    };
+  };
+
+
+</script>
+
+
+
+</body>
+</html>

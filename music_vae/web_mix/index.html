@@ -1,0 +1,65 @@
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Melody Mixer</title>
+    <meta name="description" content="Melody Mixer">
+   
+    
+    <!-- Global site tag (gtag.js) - Google Analytics -->
+   
+    <script>
+        window.dataLayer = window.dataLayer || [];
+        function gtag(){dataLayer.push(arguments);}
+        gtag('js', new Date());
+        gtag('config', 'UA-86665855-4', {
+            'referrer' : document.referrer.split('?')[0],
+        });
+    </script>
+    <script src='https://cdn.jsdelivr.net/npm/file-saver'></script>
+    <script language="javascript" type="text/javascript" src="https://storage.googleapis.com/melody-mixer/musicvae.js"></script>
+    <script language="javascript" type="text/javascript" src="./libraries/p5.js"></script>
+    <script language="javascript" type="text/javascript" src="./libraries/tone.js"></script>
+    <script language="javascript" type="text/javascript" src="./preset-melodies.js"></script>
+    <script language="javascript" type="text/javascript" src="https://storage.googleapis.com/melody-mixer/StartAudioContext.js"></script>
+    <link href="/data/images/favicon-melody-mixer-small.png" rel="shortcut icon" type="image/x-icon">
+    <link href="/data/images/favicon-melody-mixer.png" rel="apple-touch-icon">
+    <link href="https://fonts.googleapis.com/css?family=Poppins" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+    <section class="splash">
+        <div class="splash-wrapper">
+            <h1>Melody Interpolation</h1>
+            <div class="device-supported">
+               
+                <button class="splash-play-button" id="splash-play-button" onclick="onPlay();" disabled>LOADING...</button>
+                <p class="splash-description">
+                </p>
+                
+            </div>
+            
+        </div>
+       
+    </section>
+
+    <a class="about-button" target="_blank" href="https://medium.com/@torinblankensmith/how-to-blend-melodies-with-machine-learning-in-real-time-in-the-browser-8ad5b42b4d0b"></a>
+    <div class="control-container">
+        <div class="drop-down-container">
+          <select name="melody-one" class="drop-down">
+              <option>Melody 1</option>
+          </select>
+          <label for="melody-one">Melody 1</label>
+        </div>
+        <button class="play-pause-button"></button>
+        <div class="drop-down-container">
+          <select name="melody-two" class="drop-down">
+              <option>Melody 2</option>
+          </select>
+          <label for="melody-two">Melody 2</label>
+        </div>
+    </div>
+    <div class="play-pause-button" onclick="download()">DOWNLOAD</div>
+    <script language="javascript" type="text/javascript" src="demo_4.js"></script>
+</body>
+</html>
