@@ -183,8 +183,9 @@
             float c = koch(pos)*(sin(u_time)*0.2+0.35);
         // color
         float dance = danceability/3.0;  
-        vec3 backgroundCol = dance*vec3(u_pitch*dance,u_pitch*dance,u_pitch*dance)+vec3(0.1,0.0,0.1);
-        vec3 fractalCol = vec3(0.4,0.8,0.88); 
+        float alter = speed*dance;  
+        vec3 backgroundCol = 0.3*(vec3(u_pitch,u_pitch,u_pitch) + vec3(alter,dance,speed));  
+        vec3 fractalCol = vec3(speed,dance,u_pitch); 
         vec3 col = backgroundCol*pow(1.5-length(geom_texCoord-vec2(0.5)),2.0) +
             fractalCol*c;
 
@@ -370,6 +371,7 @@
         var audio = document.getElementById("audio");
 
         file.onchange = function() {
+            context.resume(); 
             var files = this.files;
             audio.src = URL.createObjectURL(files[0]);
             audio.load();
@@ -470,14 +472,14 @@
                     gl.uniform1f(gl.getUniformLocation(program, "u_time"), time*0.001);
                     gl.uniform2f(gl.getUniformLocation(program, "u_resolution"), canvas[0].width, canvas[0].height);
 
-                    console.log("bpm: " + request(json, "bpm"));
+                    // console.log("bpm: " + request(json, "bpm"));
                     gl.uniform1f(gl.getUniformLocation(program, "bpm"), request(json, "bpm"));
                     gl.uniform1f(gl.getUniformLocation(program, "danceability"), request(json, "danceability"));
 
                     analyser.getByteFrequencyData(dataArray);
                     // for (var i = 0; i < bufferLength; i++) {
                         // console.log(dataArray[i]/bufferLength);
-                        console.log(dataArray[bufferLength/2]);
+                        //console.log(dataArray[bufferLength/2]);
                         gl.uniform1f(gl.getUniformLocation(program, "u_pitch"), Math.min(dataArray[bufferLength/2]*1.5, 200)/200);
                     // }
 
